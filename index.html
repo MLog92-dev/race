@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Race Time</title>
+  
+  <!-- App Icons -->
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="icon" type="image/png" href="icon.png">
+  
+  <!-- Load Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Load Leaflet Map CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Load React and ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Load Babel to compile JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50 transition-colors duration-300" id="body-container">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // Custom hook to sync state with localStorage
+    function useLocalStorage(key, initialValue) {
+      const [value, setValue] = useState(() => {
+        try {
+          const item = window.localStorage.getItem(key);
+          return item ? JSON.parse(item) : initialValue;
+        } catch (error) {
+          console.warn("Error reading localStorage", error);
+          return initialValue;
+        }
+      });
+
+      useEffect(() => {
+        try {
+          window.localStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+          console.warn("Error setting localStorage", error);
+        }
+      }, [key, value]);
+
+      return [value, setValue];
+    }
+
+    // Inline SVG Icons
+    const Flag = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>;
+    const Activity = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
+    const MapPin = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
+    const Clock = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+    const CalculatorIcon = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="16" y1="14" x2="16" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg>;
+    const Zap = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+    const SettingsIcon = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
+    const MapPinnedIcon = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8c0 3.61-3 6.52-6 10-3-3.48-6-6.39-6-10a6 6 0 1 1 12 0"/><circle cx="12" cy="8" r="2"/><path d="M8.714 14h-3.71a1 1 0 0 0-.948.683l-2.004 6A1 1 0 0 0 3 22h18a1 1 0 0 0 .948-1.316l-2-6a1 1 0 0 0-.949-.684h-4.286"/></svg>;
+    const UploadCloudIcon = ({ size }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/><polyline points="16 16 12 12 8 16"/></svg>;
+
+    function App() {
+      // Global App State
+      const [activeTab, setActiveTab] = useLocalStorage('runner-activeTab', 'tracker');
+      const [globalUnit, setGlobalUnit] = useLocalStorage('runner-globalUnit', 'mi');
+      const [isDarkMode, setIsDarkMode] = useLocalStorage('runner-darkMode', false);
+
+      // Theme Colors based on Dark Mode
+      const [themeColor, setThemeColor] = useLocalStorage('runner-themeColor', '#2563eb');
+      
+      const defaultLightBg = '#f9fafb';
+      const defaultDarkBg = '#111827';
+      const [lightBgColor, setLightBgColor] = useLocalStorage('runner-lightBgColor', defaultLightBg);
+      const [darkBgColor, setDarkBgColor] = useLocalStorage('runner-darkBgColor', defaultDarkBg);
+      
+      const defaultLightInputBg = '#f9fafb';
+      const defaultDarkInputBg = '#374151';
+      const [lightInputBgColor, setLightInputBgColor] = useLocalStorage('runner-lightInputBg', defaultLightInputBg);
+      const [darkInputBgColor, setDarkInputBgColor] = useLocalStorage('runner-darkInputBg', defaultDarkInputBg);
+      
+      const defaultLightSectionBg = '#ffffff';
+      const defaultDarkSectionBg = '#1f2937';
+      const [lightSectionBg, setLightSectionBg] = useLocalStorage('runner-lightSectionBg', defaultLightSectionBg);
+      const [darkSectionBg, setDarkSectionBg] = useLocalStorage('runner-darkSectionBg', defaultDarkSectionBg);
+
+      const defaultLightTextColor = '#1e293b';
+      const defaultDarkTextColor = '#f8fafc';
+      const [lightTextColor, setLightTextColor] = useLocalStorage('runner-lightTextColor', defaultLightTextColor);
+      const [darkTextColor, setDarkTextColor] = useLocalStorage('runner-darkTextColor', defaultDarkTextColor);
+
+      const defaultLightEstimatesBg = '#1e293b';
+      const defaultDarkEstimatesBg = '#0f172a';
+      const [lightEstimatesBg, setLightEstimatesBg] = useLocalStorage('runner-lightEstimatesBg', defaultLightEstimatesBg);
+      const [darkEstimatesBg, setDarkEstimatesBg] = useLocalStorage('runner-darkEstimatesBg', defaultDarkEstimatesBg);
+
+      const defaultLightEstimatesCard = '#334155';
+      const defaultDarkEstimatesCard = '#1e293b';
+      const [lightEstimatesCard, setLightEstimatesCard] = useLocalStorage('runner-lightEstimatesCard', defaultLightEstimatesCard);
+      const [darkEstimatesCard, setDarkEstimatesCard] = useLocalStorage('runner-darkEstimatesCard', defaultDarkEstimatesCard);
+
+      const defaultLightEstimatesText = '#ffffff';
+      const defaultDarkEstimatesText = '#f8fafc';
+      const [lightEstimatesText, setLightEstimatesText] = useLocalStorage('runner-lightEstimatesText', defaultLightEstimatesText);
+      const [darkEstimatesText, setDarkEstimatesText] = useLocalStorage('runner-darkEstimatesText', defaultDarkEstimatesText);
+
+      // Active colors based on mode
+      const currentAppBg = isDarkMode ? darkBgColor : lightBgColor;
+      const currentInputBgColor = isDarkMode ? darkInputBgColor : lightInputBgColor;
+      const currentSectionColor = isDarkMode ? darkSectionBg : lightSectionBg;
+      const currentTextColor = isDarkMode ? darkTextColor : lightTextColor;
+      const currentEstimatesBg = isDarkMode ? darkEstimatesBg : lightEstimatesBg;
+      const currentEstimatesCard = isDarkMode ? darkEstimatesCard : lightEstimatesCard;
+      const currentEstimatesText = isDarkMode ? darkEstimatesText : lightEstimatesText;
+
+      // Tracker State
+      const [raceType, setRaceType] = useLocalStorage('runner-raceType', 'half');
+      const [customDistance, setCustomDistance] = useLocalStorage('runner-customDistance', '');
+      const [startTime, setStartTime] = useLocalStorage('runner-startTime', '');
+      const [currentDistance, setCurrentDistance] = useLocalStorage('runner-currentDistance', '');
+      const [timeAtDistance, setTimeAtDistance] = useLocalStorage('runner-timeAtDistance', '');
+      const [meetingDistance, setMeetingDistance] = useLocalStorage('runner-meetingDistance', '');
+
+      // Calculator State
+      const [calcRaceType, setCalcRaceType] = useLocalStorage('calc-raceType', 'half');
+      const [calcCustomDistance, setCalcCustomDistance] = useLocalStorage('calc-customDistance', '');
+      const [calcInputMode, setCalcInputMode] = useLocalStorage('calc-inputMode', 'pace');
+      const [calcPaceMin, setCalcPaceMin] = useLocalStorage('calc-paceMin', '');
+      const [calcPaceSec, setCalcPaceSec] = useLocalStorage('calc-paceSec', '');
+      const [calcSpeedInput, setCalcSpeedInput] = useLocalStorage('calc-speedInput', '');
+      const [calcTimeHour, setCalcTimeHour] = useLocalStorage('calc-timeHour', '');
+      const [calcTimeMin, setCalcTimeMin] = useLocalStorage('calc-timeMin', '');
+      const [calcTimeSec, setCalcTimeSec] = useLocalStorage('calc-timeSec', '');
+
+      // Import State
+      const [rawGpxData, setRawGpxData] = useLocalStorage('runner-rawGpxData', '');
+      const [importDistanceInput, setImportDistanceInput] = useLocalStorage('runner-importDistanceInput', 0);
+      const mapRef = useRef(null);
+      const polylineRef = useRef(null);
+      const markerRef = useRef(null);
+
+      // Apply body background color globally
+      useEffect(() => {
+        document.getElementById('body-container').style.backgroundColor = currentAppBg;
+        if (isDarkMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      }, [currentAppBg, isDarkMode]);
+
+      useEffect(() => {
+        const now = new Date();
+        if (!timeAtDistance) {
+          const currentTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+          setTimeAtDistance(currentTimeStr);
+        }
+        if (!startTime) {
+          const start = new Date(now.getTime() - 60 * 60 * 1000);
+          const startTimeStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
+          setStartTime(startTimeStr);
+        }
+      }, []);
+
+      // === COMMON LOGIC ===
+      const getTotalRaceDistance = (rType, custom) => {
+        if (globalUnit === 'mi') {
+          switch (rType) {
+            case '1mi': return 1.0;
+            case '5k': return 3.1;
+            case '10k': return 6.2;
+            case 'half': return 13.1;
+            case 'full': return 26.2;
+            case 'custom': return parseFloat(custom) || 0;
+            default: return 0;
+          }
+        } else {
+          switch (rType) {
+            case '1mi': return 1.6;
+            case '5k': return 5.0;
+            case '10k': return 10.0;
+            case 'half': return 21.1;
+            case 'full': return 42.2;
+            case 'custom': return parseFloat(custom) || 0;
+            default: return 0;
+          }
+        }
+      };
+
+      const parseTime = (timeStr) => {
+        if (!timeStr) return null;
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        return hours * 60 + minutes;
+      };
+
+      const formatTime = (totalMinutes) => {
+        if (totalMinutes === null || isNaN(totalMinutes)) return '--:--';
+        let m = Math.round(totalMinutes);
+        if (m < 0) m += 24 * 60;
+        let h = Math.floor(m / 60) % 24;
+        let mins = m % 60;
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${h}:${mins.toString().padStart(2, '0')} ${ampm}`;
+      };
+
+      const formatPace = (minutesPerUnit) => {
+        const unitLabel = globalUnit === 'mi' ? '/mi' : '/km';
+        if (!minutesPerUnit || isNaN(minutesPerUnit) || minutesPerUnit === Infinity || minutesPerUnit <= 0) {
+          return `--:-- ${unitLabel}`;
+        }
+        const m = Math.floor(minutesPerUnit);
+        let s = Math.round((minutesPerUnit - m) * 60);
+        if (s === 60) { return `${m + 1}:00 ${unitLabel}`; }
+        return `${m}:${s.toString().padStart(2, '0')} ${unitLabel}`;
+      };
+
+      // === TRACKER LOGIC ===
+      const handleSetCurrentTime = () => {
+        const now = new Date();
+        const currentTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+        setTimeAtDistance(currentTimeStr);
+      };
+
+      const startMins = parseTime(startTime);
+      const currentMins = parseTime(timeAtDistance);
+      const dist = parseFloat(currentDistance);
+      const meetDist = parseFloat(meetingDistance);
+      const totalDist = getTotalRaceDistance(raceType, customDistance);
+
+      let pace = null;
+      let meetingETA = null;
+      let finishETA = null;
+
+      if (startMins !== null && currentMins !== null && dist > 0) {
+        let elapsedMins = currentMins - startMins;
+        if (elapsedMins < 0) elapsedMins += 24 * 60;
+        pace = elapsedMins / dist;
+
+        if (meetDist > dist) {
+          const remainingMeetDist = meetDist - dist;
+          meetingETA = currentMins + (remainingMeetDist * pace);
+        }
+
+        if (totalDist > dist) {
+          const remainingTotalDist = totalDist - dist;
+          finishETA = currentMins + (remainingTotalDist * pace);
+        } else if (totalDist === dist) {
+          finishETA = currentMins;
+        }
+      }
+
+      // === CALCULATOR LOGIC ===
+      const formatDuration = (totalMinutes) => {
+        if (!totalMinutes || isNaN(totalMinutes) || totalMinutes <= 0) return '00:00:00';
+        const h = Math.floor(totalMinutes / 60);
+        const m = Math.floor(totalMinutes % 60);
+        const s = Math.round((totalMinutes * 60) % 60);
+        let finalH = h, finalM = m, finalS = s;
+        if (finalS === 60) { finalS = 0; finalM += 1; }
+        if (finalM === 60) { finalM = 0; finalH += 1; }
+        return `${finalH.toString().padStart(2, '0')}:${finalM.toString().padStart(2, '0')}:${finalS.toString().padStart(2, '0')}`;
+      };
+
+      const calcDist = getTotalRaceDistance(calcRaceType, calcCustomDistance);
+      let calcTotalTime = 0; 
+      let calculatedSpeed = 0;
+      let calculatedPaceMinutes = 0;
+
+      if (calcInputMode === 'pace') {
+        const paceMins = parseInt(calcPaceMin) || 0;
+        const paceSecs = parseInt(calcPaceSec) || 0;
+        calculatedPaceMinutes = paceMins + (paceSecs / 60);
+        if (calcDist > 0 && calculatedPaceMinutes > 0) {
+          calcTotalTime = calcDist * calculatedPaceMinutes;
+          calculatedSpeed = 60 / calculatedPaceMinutes;
+        }
+      } else if (calcInputMode === 'speed') {
+        const speedVal = parseFloat(calcSpeedInput) || 0;
+        calculatedSpeed = speedVal;
+        if (calcDist > 0 && speedVal > 0) {
+          calculatedPaceMinutes = 60 / speedVal;
+          calcTotalTime = calcDist * calculatedPaceMinutes;
+        }
+      } else if (calcInputMode === 'time') {
+        const timeH = parseInt(calcTimeHour) || 0;
+        const timeM = parseInt(calcTimeMin) || 0;
+        const timeS = parseInt(calcTimeSec) || 0;
+        calcTotalTime = (timeH * 60) + timeM + (timeS / 60);
+        if (calcDist > 0 && calcTotalTime > 0) {
+          calculatedPaceMinutes = calcTotalTime / calcDist;
+          calculatedSpeed = 60 / calculatedPaceMinutes;
+        }
+      }
+
+      // === IMPORT GPX LOGIC ===
+      const parseGPX = (xmlString, unit) => {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+        const trkpts = xmlDoc.getElementsByTagName('trkpt');
+        
+        let points = [];
+        let totalDistance = 0;
+        
+        const toRad = (value) => value * Math.PI / 180;
+        const R = unit === 'mi' ? 3958.8 : 6371;
+
+        for (let i = 0; i < trkpts.length; i++) {
+          const lat = parseFloat(trkpts[i].getAttribute('lat'));
+          const lon = parseFloat(trkpts[i].getAttribute('lon'));
+          
+          if (i > 0) {
+            const prevLat = points[i-1].lat;
+            const prevLon = points[i-1].lon;
+            const dLat = toRad(lat - prevLat);
+            const dLon = toRad(lon - prevLon);
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(prevLat)) * Math.cos(toRad(lat)) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            totalDistance += R * c;
+          }
+          points.push({ lat, lon, cumDist: totalDistance });
+        }
+        return { points, totalDistance };
+      };
+
+      const gpxData = useMemo(() => {
+        if (!rawGpxData) return { points: [], totalDistance: 0 };
+        return parseGPX(rawGpxData, globalUnit);
+      }, [rawGpxData, globalUnit]);
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          setRawGpxData(event.target.result);
+          setImportDistanceInput(0);
+        };
+        reader.readAsText(file);
+      };
+
+      const interpolatePoint = (points, targetDist) => {
+        if (!points || points.length === 0) return null;
+        if (targetDist <= 0) return points[0];
+        if (targetDist >= points[points.length - 1].cumDist) return points[points.length - 1];
+        
+        for (let i = 0; i < points.length - 1; i++) {
+          if (targetDist >= points[i].cumDist && targetDist <= points[i+1].cumDist) {
+            const segDist = points[i+1].cumDist - points[i].cumDist;
+            if (segDist === 0) return points[i];
+            const ratio = (targetDist - points[i].cumDist) / segDist;
+            const lat = points[i].lat + (points[i+1].lat - points[i].lat) * ratio;
+            const lon = points[i].lon + (points[i+1].lon - points[i].lon) * ratio;
+            return { lat, lon };
+          }
+        }
+        return points[points.length - 1];
+      };
+
+      const activeGpxPoint = useMemo(() => {
+        return interpolatePoint(gpxData.points, parseFloat(importDistanceInput) || 0);
+      }, [gpxData, importDistanceInput]);
+
+      // Initialize Leaflet Map
+      useEffect(() => {
+        if (activeTab === 'import' && gpxData.points.length > 0) {
+          // Use a slight delay to ensure React has fully mounted the map div with proper dimensions
+          setTimeout(() => {
+            if (!mapRef.current) {
+              const mapContainer = document.getElementById('leaflet-map');
+              if (mapContainer) {
+                mapRef.current = L.map('leaflet-map');
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                  attribution: '© OpenStreetMap'
+                }).addTo(mapRef.current);
+              }
+            }
+
+            const map = mapRef.current;
+            if (map) {
+              // Draw Polyline
+              if (polylineRef.current) map.removeLayer(polylineRef.current);
+              const latlngs = gpxData.points.map(p => [p.lat, p.lon]);
+              polylineRef.current = L.polyline(latlngs, {color: themeColor, weight: 4, opacity: 0.8}).addTo(map);
+              
+              // Fit bounds ONLY once when route changes, not on every slider tick
+              map.fitBounds(polylineRef.current.getBounds(), { padding: [20, 20] });
+              
+              // Force Leaflet to recalculate size to fix the "gray screen" issue
+              map.invalidateSize();
+            }
+          }, 50);
+        }
+
+        return () => {
+          // Cleanup map on unmount of tab OR when GPX data is cleared
+          if (mapRef.current && (activeTab !== 'import' || gpxData.points.length === 0)) {
+            mapRef.current.remove();
+            mapRef.current = null;
+            polylineRef.current = null;
+            markerRef.current = null;
+          }
+        };
+      }, [activeTab, gpxData.totalDistance, themeColor]); // trigger mostly on route load
+
+      // Move Marker on Slider Change
+      useEffect(() => {
+        if (activeTab === 'import' && mapRef.current && activeGpxPoint) {
+          if (markerRef.current) mapRef.current.removeLayer(markerRef.current);
+          markerRef.current = L.circleMarker([activeGpxPoint.lat, activeGpxPoint.lon], {
+            color: '#ffffff',
+            fillColor: '#ef4444',
+            fillOpacity: 1,
+            radius: 7,
+            weight: 2
+          }).addTo(mapRef.current);
+        }
+      }, [activeTab, activeGpxPoint]);
+
+
+      const handleReset = () => {
+        window.localStorage.clear();
+        window.location.reload(true);
+      };
+
+      const inputClasses = "block w-full box-border m-0 appearance-none p-3 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 outline-none text-lg transition-colors";
+      
+      return (
+        <div className="min-h-screen pb-24 transition-colors duration-300" style={{ color: currentTextColor }}>
+          <header className="p-4 shadow-md sticky top-0 z-20 transition-colors duration-300" style={{ backgroundColor: themeColor, color: '#ffffff' }}>
+            <h1 className="text-xl font-bold text-center">Race Time</h1>
+          </header>
+
+          <main className="max-w-md mx-auto p-4 space-y-6">
+            
+            {/* =========================================
+                TRACKER TAB CONTENT
+            ========================================= */}
+            {activeTab === 'tracker' && (
+              <>
+                <section className="p-5 rounded-xl shadow-md space-y-4 transition-colors duration-300" style={{ backgroundColor: currentEstimatesBg, color: currentEstimatesText }}>
+                  <div className="flex items-center gap-2 mb-2 font-semibold" style={{ color: themeColor }}>
+                    <Clock size={20} />
+                    <h2>Estimates</h2>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 rounded-lg col-span-2 transition-colors duration-300" style={{ backgroundColor: currentEstimatesCard }}>
+                      <p className="text-sm opacity-80 mb-1">Average Pace</p>
+                      <p className="text-2xl font-bold">{formatPace(pace)}</p>
+                    </div>
+                    <div className="p-3 rounded-lg transition-colors duration-300" style={{ backgroundColor: currentEstimatesCard }}>
+                      <p className="text-sm opacity-80 mb-1">Meeting ETA</p>
+                      <p className="text-xl font-bold" style={{ color: themeColor }}>
+                        {meetDist <= dist && dist > 0 ? 'Passed' : formatTime(meetingETA)}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg transition-colors duration-300" style={{ backgroundColor: currentEstimatesCard }}>
+                      <p className="text-sm opacity-80 mb-1">Finish ETA</p>
+                      <p className="text-xl font-bold text-green-400">
+                        {formatTime(finishETA)}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors duration-300" style={{ backgroundColor: currentSectionColor }}>
+                  <div className="flex items-center gap-2 mb-4 font-semibold" style={{ color: themeColor }}>
+                    <Flag size={20} />
+                    <h2>Race Setup</h2>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium opacity-80 mb-1">Race</label>
+                      <select value={raceType} onChange={(e) => setRaceType(e.target.value)} className={inputClasses} style={{ backgroundColor: currentInputBgColor }}>
+                        <option value="1mi">1 Mile ({globalUnit === 'mi' ? '1.0 miles' : '1.6 km'})</option>
+                        <option value="5k">5K ({globalUnit === 'mi' ? '3.1 miles' : '5.0 km'})</option>
+                        <option value="10k">10K ({globalUnit === 'mi' ? '6.2 miles' : '10.0 km'})</option>
+                        <option value="half">Half Marathon ({globalUnit === 'mi' ? '13.1 miles' : '21.1 km'})</option>
+                        <option value="full">Full Marathon ({globalUnit === 'mi' ? '26.2 miles' : '42.2 km'})</option>
+                        <option value="custom">Custom Distance</option>
+                      </select>
+                    </div>
+                    {raceType === 'custom' && (
+                      <div>
+                        <label className="block text-sm font-medium opacity-80 mb-1">Total Distance ({globalUnit === 'mi' ? 'miles' : 'km'})</label>
+                        <input type="number" step="0.01" inputMode="decimal" value={customDistance} onChange={(e) => setCustomDistance(e.target.value)} placeholder="e.g. 10" className={inputClasses} style={{ backgroundColor: currentInputBgColor }} />
+                      </div>
+                    )}
+                    <div>
+                      <label className="block text-sm font-medium opacity-80 mb-1">Start Time</label>
+                      <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={inputClasses} style={{ backgroundColor: currentInputBgColor }} />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors duration-300" style={{ backgroundColor: currentSectionColor }}>
+                  <div className="flex items-center gap-2 mb-4 font-semibold" style={{ color: themeColor }}>
+                    <Activity size={20} />
+                    <h2>Current Progress</h2>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium opacity-80 mb-1">Distance ({globalUnit === 'mi' ? 'miles' : 'km'})</label>
+                      <input type="number" step="0.01" inputMode="decimal" value={currentDistance} onChange={(e) => setCurrentDistance(e.target.value)} placeholder="e.g. 6.5" className={inputClasses} style={{ backgroundColor: currentInputBgColor }} />
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max={totalDist || 100} 
+                        step="0.01" 
+                        value={currentDistance || 0} 
+                        onChange={(e) => setCurrentDistance(e.target.value)}
+                        className="w-full mt-3 accent-blue-600"
+                        style={{ accentColor: themeColor }}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-sm font-medium opacity-80">Time</label>
+                        <button type="button" onClick={handleSetCurrentTime} className="text-xs px-3 py-1 rounded-md transition-colors font-medium" style={{ backgroundColor: `${themeColor}20`, color: themeColor }}>Set to Now</button>
+                      </div>
+                      <input type="time" value={timeAtDistance} onChange={(e) => setTimeAtDistance(e.target.value)} className={inputClasses} style={{ backgroundColor: currentInputBgColor }} />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors duration-300" style={{ backgroundColor: currentSectionColor }}>
+                  <div className="flex items-center gap-2 mb-4 font-semibold" style={{ color: themeColor }}>
+                    <MapPin size={20} />
+                    <h2>Meeting Spot</h2>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium opacity-80 mb-1">Distance ({globalUnit === 'mi' ? 'miles' : 'km'})</label>
+                    <input type="number" step="0.01" inputMode="decimal" value={meetingDistance} onChange={(e) => setMeetingDistance(e.target.value)} placeholder="e.g. 10" className={inputClasses} style={{ backgroundColor: currentInputBgColor }} />
+                    <input 
+                        type="range" 
+                        min="0" 
+                        max={totalDist || 100} 
+                        step="0.01" 
+                        value={meetingDistance || 0} 
+                        onChange={(e) => setMeetingDistance(e.target.value)}
+                        className="w-full mt-3 accent-blue-600"
+                        style={{ accentColor: themeColor }}
+                      />
+                  </div>
+                </section>
+              </>
+            )}
+
+            {/* =========================================
+                CALCULATOR TAB CONTENT
+            ========================================= */}
+            {activeTab === 'calculator' && (
+              <>
+                <section className="p-5 rounded-xl shadow-md space-y-4 transition-colors duration-300" style={{ backgroundColor: currentEstimatesBg, color: currentEstimatesText }}>
+                  <div className="flex items-center gap-2 mb-2 font-semibold" style={{ color: themeColor }}>
+                    <CalculatorIcon size={20} />
+                    <h2>Run Calculations</h2>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {calcInputMode !== 'time' && (
+                      <div className="p-3 rounded-lg transition-colors duration-300" style={{ backgroundColor: currentEstimatesCard }}>
+                        <p className="text-sm opacity-80 mb-1">Total Time</p>
+                        <p className="text-2xl font-bold text-green-400">{formatDuration(calcTotalTime)}</p>
+                      </div>
+                    )}
+                    {calcInputMode !== 'pace' && (
+                      <div className="p-3 rounded-lg transition-colors duration-300" style={{ backgroundColor: currentEstimatesCard }}>
+                        <p className="text-sm opacity-80 mb-1">Pace</p>
+                        <p className="text-2xl font-bold" style={{ color: themeColor }}>
+                          {formatPace(calculatedPaceMinutes)}
+                        </p>
+                      </div>
+                    )}
+                    {calcInputMode !== 'speed' && (
+                      <div className="p-3 rounded-lg transition-colors duration-300" style={{ backgroundColor: currentEstimatesCard }}>
+                        <p className="text-sm opacity-80 mb-1">Speed</p>
+                        <p className="text-2xl font-bold" style={{ color: themeColor }}>
+                          {calculatedSpeed > 0 ? calculatedSpeed.toFixed(2) : '0.00'} <span className="text-sm font-normal opacity-70">{globalUnit === 'mi' ? 'mph' : 'kph'}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors duration-300" style={{ backgroundColor: currentSectionColor }}>
+                  <div className="flex items-center gap-2 mb-4 font-semibold" style={{ color: themeColor }}>
+                    <Flag size={20} />
+                    <h2>Race Distance</h2>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium opacity-80 mb-1">Race</label>
+                      <select value={calcRaceType} onChange={(e) => setCalcRaceType(e.target.value)} className={inputClasses} style={{ backgroundColor: currentInputBgColor }}>
+                        <option value="1mi">1 Mile ({globalUnit === 'mi' ? '1.0 miles' : '1.6 km'})</option>
+                        <option value="5k">5K ({globalUnit === 'mi' ? '3.1 miles' : '5.0 km'})</option>
+                        <option value="10k">10K ({globalUnit === 'mi' ? '6.2 miles' : '10.0 km'})</option>
+                        <option value="half">Half Marathon ({globalUnit === 'mi' ? '13.1 miles' : '21.1 km'})</option>
+                        <option value="full">Full Marathon ({globalUnit === 'mi' ? '26.2 miles' : '42.2 km'})</option>
+                        <option value="custom">Custom Distance</option>
+                      </select>
+                    </div>
+                    {calcRaceType === 'custom' && (
+                      <div>
+                        <label className="block text-sm font-medium opacity-80 mb-1">Total Distance ({globalUnit === 'mi' ? 'miles' : 'km'})</label>
+                        <input type="number" step="0.01" inputMode="decimal" value={calcCustomDistance} onChange={(e) => setCalcCustomDistance(e.target.value)} placeholder="e.g. 10" className={inputClasses} style={{ backgroundColor: currentInputBgColor }} />
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors duration-300" style={{ backgroundColor: currentSectionColor }}>
+                  <div className="flex items-center gap-2 mb-4 font-semibold" style={{ color: themeColor }}>
+                    <Zap size={20} />
+                    <h2>Target Metrics</h2>
+                  </div>
+                  <div className="flex p-1 rounded-lg mb-4 transition-colors duration-300" style={{ backgroundColor: currentInputBgColor }}>
+                    <button onClick={() => setCalcInputMode('pace')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${calcInputMode === 'pace' ? 'shadow-sm' : 'opacity-60'}`} style={calcInputMode === 'pace' ? { backgroundColor: currentSectionColor, color: themeColor } : {}}>Pace</button>
+                    <button onClick={() => setCalcInputMode('speed')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${calcInputMode === 'speed' ? 'shadow-sm' : 'opacity-60'}`} style={calcInputMode === 'speed' ? { backgroundColor: currentSectionColor, color: themeColor } : {}}>Speed</button>
+                    <button onClick={() => setCalcInputMode('time')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${calcInputMode === 'time' ? 'shadow-sm' : 'opacity-60'}`} style={calcInputMode === 'time' ? { backgroundColor: currentSectionColor, color: themeColor } : {}}>Time</button>
+                  </div>
+                  
+                  {calcInputMode === 'pace' && (
+                    <div>
+                      <label className="block text-sm font-medium opacity-80 mb-1">Target Pace (per {globalUnit === 'mi' ? 'mile' : 'km'})</label>
+                      <div className="flex gap-4 items-center">
+                        <div className="flex-1 relative">
+                          <input type="number" inputMode="numeric" min="0" value={calcPaceMin} onChange={(e) => setCalcPaceMin(e.target.value)} placeholder="00" className={`${inputClasses} pr-10 text-center`} style={{ backgroundColor: currentInputBgColor }} />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 font-medium">m</span>
+                        </div>
+                        <span className="text-2xl font-bold opacity-30">:</span>
+                        <div className="flex-1 relative">
+                          <input type="number" inputMode="numeric" min="0" max="59" value={calcPaceSec} onChange={(e) => setCalcPaceSec(e.target.value)} placeholder="00" className={`${inputClasses} pr-8 text-center`} style={{ backgroundColor: currentInputBgColor }} />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 font-medium">s</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {calcInputMode === 'speed' && (
+                    <div>
+                      <label className="block text-sm font-medium opacity-80 mb-1">Target Speed ({globalUnit === 'mi' ? 'mph' : 'kph'})</label>
+                      <div className="relative">
+                        <input type="number" step="0.01" inputMode="decimal" min="0" value={calcSpeedInput} onChange={(e) => setCalcSpeedInput(e.target.value)} placeholder="e.g. 6.5" className={`${inputClasses} pr-12 text-center`} style={{ backgroundColor: currentInputBgColor }} />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 opacity-50 font-medium">{globalUnit === 'mi' ? 'mph' : 'kph'}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {calcInputMode === 'time' && (
+                    <div>
+                      <label className="block text-sm font-medium opacity-80 mb-1">Goal Time</label>
+                      <div className="flex gap-2 items-center">
+                        <div className="flex-1 relative">
+                          <input type="number" inputMode="numeric" min="0" value={calcTimeHour} onChange={(e) => setCalcTimeHour(e.target.value)} placeholder="0" className={`${inputClasses} pr-6 text-center`} style={{ backgroundColor: currentInputBgColor }} />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 opacity-50 font-medium">h</span>
+                        </div>
+                        <span className="text-xl font-bold opacity-30">:</span>
+                        <div className="flex-1 relative">
+                          <input type="number" inputMode="numeric" min="0" max="59" value={calcTimeMin} onChange={(e) => setCalcTimeMin(e.target.value)} placeholder="00" className={`${inputClasses} pr-6 text-center`} style={{ backgroundColor: currentInputBgColor }} />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 opacity-50 font-medium">m</span>
+                        </div>
+                        <span className="text-xl font-bold opacity-30">:</span>
+                        <div className="flex-1 relative">
+                          <input type="number" inputMode="numeric" min="0" max="59" value={calcTimeSec} onChange={(e) => setCalcTimeSec(e.target.value)} placeholder="00" className={`${inputClasses} pr-6 text-center`} style={{ backgroundColor: currentInputBgColor }} />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 opacity-50 font-medium">s</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+
+            {/* =========================================
+                IMPORT (GPX MAP) TAB CONTENT
+            ========================================= */}
+            {activeTab === 'import' && (
+              <>
+                <section className="p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors duration-300" style={{ backgroundColor: currentSectionColor }}>
+                  <div className="flex items-center gap-2 mb-4 font-semibold" style={{ color: themeColor }}>
+                    <UploadCloudIcon size={20} />
+                    <h2>Course Map</h2>
+                  </div>
+                  
+                  {!rawGpxData ? (
+                    <div className="text-center py-10 px-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800">
+                      <p className="text-sm font-medium mb-4 opacity-80">Upload a GPX file to view the course map and check exact distances.</p>
+                      <label className="cursor-pointer px-4 py-2 rounded-lg font-medium text-white shadow-md inline-block" style={{ backgroundColor: themeColor }}>
+                        Choose .GPX File
+                        <input type="file" accept=".gpx" className="hidden" onChange={handleFileUpload} />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Leaflet Map Container */}
+                      <div id="leaflet-map" className="w-full h-64 rounded-xl z-0 bg-gray-200 overflow-hidden shadow-inner"></div>
+                      
+                      <div className="flex justify-between items-center px-2">
+                        <span className="text-sm font-medium opacity-80">Total Distance:</span>
+                        <span className="text-lg font-bold">{gpxData.totalDistance.toFixed(2)} {globalUnit === 'mi' ? 'miles' : 'km'}</span>
+                      </div>
+
+                      <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                        <label className="block text-sm font-medium opacity-80 mb-2">Locate Distance ({globalUnit === 'mi' ? 'miles' : 'km'})</label>
+                        <div className="flex items-center gap-4">
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            inputMode="decimal"
+                            min="0"
+                            max={gpxData.totalDistance.toFixed(2)}
+                            value={importDistanceInput} 
+                            onChange={(e) => setImportDistanceInput(e.target.value)} 
+                            className={`${inputClasses} w-24 text-center`} 
+                            style={{ backgroundColor: currentInputBgColor }} 
+                          />
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max={gpxData.totalDistance || 100} 
+                            step="0.01" 
+                            value={importDistanceInput || 0} 
+                            onChange={(e) => setImportDistanceInput(e.target.value)}
+                            className="flex-1 accent-blue-600"
+                            style={{ accentColor: themeColor }}
+                          />
+                        </div>
+                      </div>
+
+                      {activeGpxPoint && (
+                        <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                          <label className="block text-sm font-medium opacity-80 mb-2">Navigate to Marker</label>
+                          <div className="flex gap-3">
+                            <a 
+                              href={`http://maps.apple.com/?ll=${activeGpxPoint.lat},${activeGpxPoint.lon}&q=Meeting+Spot`}
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="flex-1 py-2.5 px-2 text-sm font-bold rounded-lg text-center shadow-sm transition-colors border border-gray-200 dark:border-gray-700"
+                              style={{ backgroundColor: currentInputBgColor, color: themeColor }}
+                            >
+                              Apple Maps
+                            </a>
+                            <a 
+                              href={`https://www.google.com/maps/search/?api=1&query=${activeGpxPoint.lat},${activeGpxPoint.lon}`}
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="flex-1 py-2.5 px-2 text-sm font-bold rounded-lg text-center shadow-sm transition-colors border border-gray-200 dark:border-gray-700"
+                              style={{ backgroundColor: currentInputBgColor, color: themeColor }}
+                            >
+                              Google Maps
+                            </a>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="text-center mt-2">
+                        <button onClick={() => setRawGpxData('')} className="text-xs px-3 py-2 rounded-md font-medium text-red-500 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 transition-colors">
+                          Clear GPX Map
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+
+            {/* =========================================
+                SETTINGS TAB CONTENT
+            ========================================= */}
+            {activeTab === 'settings' && (
+              <section className="p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 transition-colors duration-300" style={{ backgroundColor: currentSectionColor }}>
+                <div className="flex items-center gap-2 mb-4 font-semibold" style={{ color: themeColor }}>
+                  <SettingsIcon size={20} />
+                  <h2>App Settings</h2>
+                </div>
+                
+                <div className="space-y-6">
+                  {/* Global Unit */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium opacity-80">Distance Unit</label>
+                    <select value={globalUnit} onChange={(e) => setGlobalUnit(e.target.value)} className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg outline-none transition-colors" style={{ backgroundColor: currentInputBgColor, color: currentTextColor }}>
+                      <option value="mi">Miles</option>
+                      <option value="km">Kilometers</option>
+                    </select>
+                  </div>
+
+                  {/* Dark Mode Toggle */}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium opacity-80">Dark Mode</label>
+                    <button 
+                      onClick={() => setIsDarkMode(!isDarkMode)}
+                      className={`w-12 h-6 rounded-full p-1 transition-colors duration-300 ease-in-out ${isDarkMode ? 'bg-blue-600' : 'bg-gray-300'}`}
+                      style={isDarkMode ? { backgroundColor: themeColor } : {}}
+                    >
+                      <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ease-in-out ${isDarkMode ? 'translate-x-6' : ''}`}></div>
+                    </button>
+                  </div>
+
+                  <hr className="border-gray-200 dark:border-gray-700 my-4" />
+                  
+                  <h3 className="text-sm font-bold opacity-70 uppercase tracking-wider mb-2">Color Customization</h3>
+                  <p className="text-xs opacity-60 mb-4">Colors are saved separately for Light Mode and Dark Mode.</p>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">Primary Accent</label>
+                      <input type="color" value={themeColor} onChange={(e) => setThemeColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">App Background</label>
+                      <input type="color" value={isDarkMode ? darkBgColor : lightBgColor} onChange={(e) => isDarkMode ? setDarkBgColor(e.target.value) : setLightBgColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">Section Background</label>
+                      <input type="color" value={isDarkMode ? darkSectionBg : lightSectionBg} onChange={(e) => isDarkMode ? setDarkSectionBg(e.target.value) : setLightSectionBg(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">Input Background</label>
+                      <input type="color" value={isDarkMode ? darkInputBgColor : lightInputBgColor} onChange={(e) => isDarkMode ? setDarkInputBgColor(e.target.value) : setLightInputBgColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">Main Text Color</label>
+                      <input type="color" value={isDarkMode ? darkTextColor : lightTextColor} onChange={(e) => isDarkMode ? setDarkTextColor(e.target.value) : setLightTextColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+                    
+                    <hr className="border-gray-100 dark:border-gray-800 my-2" />
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">Estimates Background</label>
+                      <input type="color" value={isDarkMode ? darkEstimatesBg : lightEstimatesBg} onChange={(e) => isDarkMode ? setDarkEstimatesBg(e.target.value) : setLightEstimatesBg(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">Estimates Inner Cards</label>
+                      <input type="color" value={isDarkMode ? darkEstimatesCard : lightEstimatesCard} onChange={(e) => isDarkMode ? setDarkEstimatesCard(e.target.value) : setLightEstimatesCard(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium opacity-80">Estimates Text Color</label>
+                      <input type="color" value={isDarkMode ? darkEstimatesText : lightEstimatesText} onChange={(e) => isDarkMode ? setDarkEstimatesText(e.target.value) : setLightEstimatesText(e.target.value)} className="w-8 h-8 rounded cursor-pointer border border-gray-300 dark:border-gray-600" />
+                    </div>
+                  </div>
+
+                  <hr className="border-gray-200 dark:border-gray-700 my-4" />
+
+                  <div className="pt-2">
+                    <p className="text-sm font-medium opacity-80 mb-2">Reset App Data</p>
+                    <button 
+                      onClick={handleReset}
+                      className="w-full py-3 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-bold rounded-lg hover:bg-red-200 transition-colors"
+                    >
+                      Yes
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+
+          </main>
+
+          <nav className="fixed bottom-0 w-full border-t border-gray-200 dark:border-gray-800 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] transition-colors duration-300 z-50" style={{ backgroundColor: currentSectionColor, paddingBottom: 'env(safe-area-inset-bottom)' }}>
+            <div className="flex justify-around items-center h-16 max-w-md mx-auto">
+              <button onClick={() => setActiveTab('tracker')} className="flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors" style={{ color: activeTab === 'tracker' ? themeColor : '#9ca3af' }}>
+                <MapPinnedIcon size={24} />
+                <span className="text-xs font-medium">Tracker</span>
+              </button>
+              <button onClick={() => setActiveTab('calculator')} className="flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors" style={{ color: activeTab === 'calculator' ? themeColor : '#9ca3af' }}>
+                <CalculatorIcon size={24} />
+                <span className="text-xs font-medium">Calc</span>
+              </button>
+              <button onClick={() => setActiveTab('import')} className="flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors" style={{ color: activeTab === 'import' ? themeColor : '#9ca3af' }}>
+                <UploadCloudIcon size={24} />
+                <span className="text-xs font-medium">Import</span>
+              </button>
+              <button onClick={() => setActiveTab('settings')} className="flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors" style={{ color: activeTab === 'settings' ? themeColor : '#9ca3af' }}>
+                <SettingsIcon size={24} />
+                <span className="text-xs font-medium">Settings</span>
+              </button>
+            </div>
+          </nav>
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
