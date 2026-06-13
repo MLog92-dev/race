@@ -302,6 +302,7 @@
         
         let points = [];
         let totalDistance = 0;
+        let rawElevationGain = 0;
         
         const toRad = (value) => value * Math.PI / 180;
         const R = unit === 'mi' ? 3958.8 : 6371;
@@ -309,6 +310,9 @@
         for (let i = 0; i < trkpts.length; i++) {
           const lat = parseFloat(trkpts[i].getAttribute('lat'));
           const lon = parseFloat(trkpts[i].getAttribute('lon'));
+          
+          const eleNode = trkpts[i].getElementsByTagName('ele')[0];
+          const ele = eleNode ? parseFloat(eleNode.textContent) : null;
           
           if (i > 0) {
             const prevLat = points[i-1].lat;
@@ -318,14 +322,27 @@
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(prevLat)) * Math.cos(toRad(lat)) * Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
             totalDistance += R * c;
+
+            // Calculate elevation gain (filtered for > 0.5m to reduce GPS jitter)
+            if (ele !== null && points[i-1].ele !== null) {
+              const eleDiff = ele - points[i-1].ele;
+              if (eleDiff > 0.5) {
+                rawElevationGain += eleDiff;
+              }
+            }
           }
-          points.push({ lat, lon, cumDist: totalDistance });
+          points.push({ lat, lon, cumDist: totalDistance, ele });
         }
-        return { points, totalDistance };
+
+        // GPX elevation is usually in meters. Convert to feet if user selected miles.
+        const eleGainDisplay = unit === 'mi' ? rawElevationGain * 3.28084 : rawElevationGain;
+        const hasElevation = points.some(p => p.ele !== null);
+
+        return { points, totalDistance, totalElevationGain: eleGainDisplay, hasElevation };
       };
 
       const gpxData = useMemo(() => {
-        if (!rawGpxData) return { points: [], totalDistance: 0 };
+        if (!rawGpxData) return { points: [], totalDistance: 0, totalElevationGain: 0, hasElevation: false };
         return parseGPX(rawGpxData, globalUnit);
       }, [rawGpxData, globalUnit]);
 
@@ -352,7 +369,13 @@
             const ratio = (targetDist - points[i].cumDist) / segDist;
             const lat = points[i].lat + (points[i+1].lat - points[i].lat) * ratio;
             const lon = points[i].lon + (points[i+1].lon - points[i].lon) * ratio;
-            return { lat, lon };
+            
+            let ele = null;
+            if (points[i].ele !== null && points[i+1].ele !== null) {
+              ele = points[i].ele + (points[i+1].ele - points[i].ele) * ratio;
+            }
+
+            return { lat, lon, ele };
           }
         }
         return points[points.length - 1];
@@ -701,6 +724,13 @@
                         <span className="text-lg font-bold">{gpxData.totalDistance.toFixed(2)} {globalUnit === 'mi' ? 'miles' : 'km'}</span>
                       </div>
 
+                      {gpxData.hasElevation && (
+                        <div className="flex justify-between items-center px-2">
+                          <span className="text-sm font-medium opacity-80">Elevation Gain:</span>
+                          <span className="text-lg font-bold">{Math.round(gpxData.totalElevationGain).toLocaleString()} {globalUnit === 'mi' ? 'ft' : 'm'}</span>
+                        </div>
+                      )}
+
                       <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
                         <label className="block text-sm font-medium opacity-80 mb-2">Locate Distance ({globalUnit === 'mi' ? 'miles' : 'km'})</label>
                         <div className="flex items-center gap-4">
@@ -727,6 +757,43 @@
                           />
                         </div>
                       </div>
+
+                      {gpxData.hasElevation && (() => {
+                        const width = 1000;
+                        const height = 150;
+                        const padding = 15;
+                        const validPoints = gpxData.points.filter(p => p.ele !== null);
+                        if (validPoints.length === 0) return null;
+
+                        const eles = validPoints.map(p => p.ele);
+                        const minEle = Math.min(...eles);
+                        const maxEle = Math.max(...eles);
+                        const range = maxEle - minEle || 1;
+
+                        const getX = (dist) => (dist / gpxData.totalDistance) * width;
+                        const getY = (ele) => height - padding - ((ele - minEle) / range) * (height - 2 * padding);
+
+                        const pathData = validPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${getX(p.cumDist)},${getY(p.ele)}`).join(' ');
+                        const areaPath = `${pathData} L ${width},${height} L 0,${height} Z`;
+
+                        const activeDist = parseFloat(importDistanceInput) || 0;
+                        const activeX = getX(activeDist);
+                        const activeY = activeGpxPoint && activeGpxPoint.ele !== null ? getY(activeGpxPoint.ele) : 0;
+
+                        return (
+                          <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <label className="block text-sm font-medium opacity-80 mb-2">Elevation Profile</label>
+                            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-24 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 transition-colors" style={{ backgroundColor: currentInputBgColor }}>
+                              <path d={areaPath} fill={themeColor} fillOpacity="0.2" />
+                              <path d={pathData} fill="none" stroke={themeColor} strokeWidth="2" strokeLinejoin="round" />
+                              <line x1={activeX} y1="0" x2={activeX} y2={height} stroke="#ef4444" strokeWidth="2" strokeDasharray="4" />
+                              {activeGpxPoint && activeGpxPoint.ele !== null && (
+                                <circle cx={activeX} cy={activeY} r="6" fill="#ef4444" stroke="#ffffff" strokeWidth="2" />
+                              )}
+                            </svg>
+                          </div>
+                        );
+                      })()}
 
                       {activeGpxPoint && (
                         <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
